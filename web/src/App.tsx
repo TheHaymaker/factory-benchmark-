@@ -6,6 +6,8 @@ import { PatientsPage } from './pages/PatientsPage';
 import { ProviderPage } from './pages/ProviderPage';
 import { ProvidersPage } from './pages/ProvidersPage';
 import { StaffSchedulePage } from './pages/StaffSchedulePage';
+import { StaffWaitlistPage } from './pages/StaffWaitlistPage';
+import { WaitlistPage } from './pages/WaitlistPage';
 
 export { future as routerFuture };
 
@@ -17,7 +19,9 @@ export function AppRoutes() {
         <Route path="providers/:providerId" element={<ProviderPage />} />
         <Route path="appointments" element={<AppointmentsPage />} />
         <Route path="patients" element={<PatientsPage />} />
+        <Route path="waitlist" element={<WaitlistPage />} />
         <Route path="staff/schedule" element={<StaffSchedulePage />} />
+        <Route path="staff/waitlist" element={<StaffWaitlistPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

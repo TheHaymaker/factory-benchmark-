@@ -4,18 +4,20 @@ import { resetDatabase } from '../db/reset.js';
 import { seedDemoData } from '../db/seed.js';
 import type { ControllableClock } from '../lib/clock.js';
 import { toIso } from '../lib/time.js';
+import type { InMemoryNotifier } from '../services/notifier.js';
 import { asInput, optionalInteger, optionalIsoTimestamp } from '../lib/validate.js';
 
 /**
  * Test hooks, mounted at `/api/dev` only when ENABLE_DEV_ROUTES=1.
- * Used by e2e tests to get a known state and to control time.
+ * Used by e2e tests to get a known state, control time and inspect notifications.
  */
-export function devRouter(db: Db, clock: ControllableClock): Router {
+export function devRouter(db: Db, clock: ControllableClock, notifier: InMemoryNotifier): Router {
   const router = Router();
 
   router.post('/reset', (req, res) => {
     const input = asInput(req.body ?? {});
     resetDatabase(db);
+    notifier.clear();
     if (input.seed === true) seedDemoData(db, clock);
     res.status(204).end();
   });
@@ -34,6 +36,11 @@ export function devRouter(db: Db, clock: ControllableClock): Router {
       clock.set(optionalIsoTimestamp(input, 'now'));
     }
     res.json({ now: toIso(clock.now()), frozen: clock.isFrozen() });
+  });
+
+  // Messages sent by the stub notifier.
+  router.get('/notifications', (_req, res) => {
+    res.json(notifier.list());
   });
 
   return router;

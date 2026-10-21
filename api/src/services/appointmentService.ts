@@ -10,6 +10,7 @@ import type {
 } from '../repositories/appointmentRepository.js';
 import type { SlotRepository } from '../repositories/slotRepository.js';
 import { isBookable } from './availability.js';
+import type { SlotReleaseHandler } from './offerService.js';
 import type { PatientService } from './patientService.js';
 import type { Transact } from './transaction.js';
 
@@ -22,6 +23,8 @@ export class AppointmentService {
     private readonly patients: PatientService,
     private readonly clock: Clock,
     private readonly transact: Transact,
+    /** Notified after a cancellation commits (the waitlist offer engine). */
+    private readonly onSlotReleased?: SlotReleaseHandler,
   ) {}
 
   /** @throws 404 NOT_FOUND */
@@ -84,7 +87,7 @@ export class AppointmentService {
    */
   cancel(id: string, body: unknown = {}): AppointmentDetails {
     const reason = optionalString(asInput(body), 'reason', 500);
-    this.transact(() => {
+    const slotId = this.transact(() => {
       const appointment = this.get(id);
       if (appointment.status === 'cancelled') {
         throw conflict('ALREADY_CANCELLED', 'Appointment is already cancelled');
@@ -98,7 +101,14 @@ export class AppointmentService {
       }
       this.appointments.markCancelled(id, toIso(now), reason);
       this.slots.updateStatus(appointment.slotId, 'open');
+      return appointment.slotId;
     });
+    // After commit: a failure in the offer engine must not fail the cancellation.
+    try {
+      this.onSlotReleased?.slotReleased(slotId);
+    } catch (err) {
+      console.error('Offer engine failed after cancellation', err);
+    }
     return this.get(id);
   }
 }

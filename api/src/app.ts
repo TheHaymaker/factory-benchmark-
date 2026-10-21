@@ -7,9 +7,11 @@ import type { Clock, ControllableClock } from './lib/clock.js';
 import { errorHandler, routeNotFound } from './middleware/errorHandler.js';
 import { appointmentsRouter } from './routes/appointments.js';
 import { devRouter } from './routes/dev.js';
+import { offersRouter } from './routes/offers.js';
 import { patientsRouter } from './routes/patients.js';
 import { providersRouter } from './routes/providers.js';
 import { staffRouter } from './routes/staff.js';
+import { waitlistRouter } from './routes/waitlist.js';
 
 export interface AppOptions {
   db: Db;
@@ -18,10 +20,18 @@ export interface AppOptions {
   devClock?: ControllableClock;
   /** Directory of the built web app to serve, if it exists. */
   webDistPath?: string;
+  /** Waitlist offer TTL (defaults to 15 minutes). */
+  offerTtlMinutes?: number;
 }
 
-export function createApp({ db, clock, devClock, webDistPath }: AppOptions): Express {
-  const services = createServices(db, clock);
+export function createApp({
+  db,
+  clock,
+  devClock,
+  webDistPath,
+  offerTtlMinutes,
+}: AppOptions): Express {
+  const services = createServices(db, clock, { offerTtlMinutes });
   const app = express();
   app.use(express.json());
 
@@ -32,8 +42,13 @@ export function createApp({ db, clock, devClock, webDistPath }: AppOptions): Exp
   api.use('/patients', patientsRouter(services.patients));
   api.use('/providers', providersRouter(services.providers, services.slots));
   api.use('/appointments', appointmentsRouter(services.appointments));
-  api.use('/staff', staffRouter(services.slots));
-  if (devClock) api.use('/dev', devRouter(db, devClock));
+  api.use('/waitlist', waitlistRouter(services.waitlist));
+  api.use('/offers', offersRouter(services.offers));
+  api.use(
+    '/staff',
+    staffRouter(services.slots, services.waitlist, services.offers, services.audit),
+  );
+  if (devClock) api.use('/dev', devRouter(db, devClock, services.notifier));
   api.use(routeNotFound);
 
   app.use('/api', api);

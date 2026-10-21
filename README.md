@@ -47,6 +47,7 @@ Run from the repository root.
 | `DATABASE_PATH`     | `api/data/clinic.db` | SQLite file (created on startup)               |
 | `ENABLE_DEV_ROUTES` | unset                | `1` mounts the `/api/dev/*` test hooks         |
 | `WEB_DIST_PATH`     | `web/dist`           | Built web app to serve as static files, if any |
+| `OFFER_TTL_MINUTES` | `15`                 | How long a waitlist offer stays pending        |
 
 ## Architecture
 
@@ -85,26 +86,42 @@ repositories never enforce business rules. Time comes from an injected `Clock`
 - **Slot** — a provider's bookable time range; `status` is `open` or `booked`.
 - **Appointment** — a patient's booking of a slot; `status` is `booked` or `cancelled`.
   Cancelling reopens the slot. All cancellation goes through `AppointmentService.cancel`.
+- **Waitlist entry** — a patient waiting for a provider (or any provider) within a window;
+  `status` is `active`, `offered`, `booked` or `removed`.
+- **Slot offer** — a freed slot offered to a waitlist entry; `pending`, `accepted`,
+  `declined` or `expired`. After a cancellation the offer engine offers the slot to the
+  oldest eligible active entry; while an offer is pending the slot's status is `held`.
+  Declined or expired offers cascade to the next entry, or the slot reopens.
 
 ### API
 
 All paths are under `/api`. Success responses are the resource (or an array of
 resources) as JSON. Errors are always `{ "error": { "code": "...", "message": "..." } }`.
 
-| Method & path                   | Success | Notes                                                                                    |
-| ------------------------------- | ------- | ---------------------------------------------------------------------------------------- |
-| `GET /health`                   | 200     |                                                                                          |
-| `GET /patients`                 | 200     |                                                                                          |
-| `POST /patients`                | 201     | `{ name, email, phone? }` · 409 `EMAIL_TAKEN`                                            |
-| `GET /patients/:id`             | 200     |                                                                                          |
-| `GET /providers`                | 200     |                                                                                          |
-| `GET /providers/:id`            | 200     |                                                                                          |
-| `GET /providers/:id/slots`      | 200     | `?from=&to=` (ISO, default next 14 days) · `?available=true`                             |
-| `POST /staff/slots`             | 201     | `{ providerId, startsAt, durationMinutes? }` · 409 `SLOT_OVERLAP`                        |
-| `GET /appointments`             | 200     | `?patientId=&providerId=&status=`                                                        |
-| `POST /appointments`            | 201     | `{ patientId, slotId, reason? }` · 409 `SLOT_UNAVAILABLE` · 422 `OUTSIDE_BOOKING_WINDOW` |
-| `GET /appointments/:id`         | 200     |                                                                                          |
-| `POST /appointments/:id/cancel` | 200     | `{ reason? }` · 409 `ALREADY_CANCELLED` · 422 `APPOINTMENT_STARTED`                      |
+| Method & path                   | Success | Notes                                                                                        |
+| ------------------------------- | ------- | -------------------------------------------------------------------------------------------- |
+| `GET /health`                   | 200     |                                                                                              |
+| `GET /patients`                 | 200     |                                                                                              |
+| `POST /patients`                | 201     | `{ name, email, phone? }` · 409 `EMAIL_TAKEN`                                                |
+| `GET /patients/:id`             | 200     |                                                                                              |
+| `GET /providers`                | 200     |                                                                                              |
+| `GET /providers/:id`            | 200     |                                                                                              |
+| `GET /providers/:id/slots`      | 200     | `?from=&to=` (ISO, default next 14 days) · `?available=true`                                 |
+| `POST /staff/slots`             | 201     | `{ providerId, startsAt, durationMinutes? }` · 409 `SLOT_OVERLAP`                            |
+| `GET /appointments`             | 200     | `?patientId=&providerId=&status=`                                                            |
+| `POST /appointments`            | 201     | `{ patientId, slotId, reason? }` · 409 `SLOT_UNAVAILABLE` · 422 `OUTSIDE_BOOKING_WINDOW`     |
+| `GET /appointments/:id`         | 200     |                                                                                              |
+| `POST /appointments/:id/cancel` | 200     | `{ reason? }` · 409 `ALREADY_CANCELLED` · 422 `APPOINTMENT_STARTED`                          |
+| `POST /waitlist`                | 201     | `{ patientId, providerId?, earliestAt, latestAt }` · 409 `DUPLICATE_ENTRY`                   |
+| `GET /waitlist`                 | 200     | `?patientId=` (required); excludes removed entries                                           |
+| `DELETE /waitlist/:id`          | 204     | Declines a pending offer · 409 `ENTRY_BOOKED`                                                |
+| `GET /offers`                   | 200     | `?patientId=` (required); pending offers with slot details                                   |
+| `POST /offers/:id/accept`       | 200     | Returns the appointment · 409 `OFFER_NOT_PENDING` · 410 `OFFER_EXPIRED`                      |
+| `POST /offers/:id/decline`      | 200     | Returns the offer · 409 `OFFER_NOT_PENDING` · 410 `OFFER_EXPIRED`                            |
+| `GET /staff/waitlist`           | 200     | `?providerId=`; entries with `patientName`, `providerName`                                   |
+| `POST /staff/offers`            | 201     | `{ entryId, slotId }` · 409 `SLOT_NOT_OPEN` / `ENTRY_HAS_PENDING_OFFER` / `ENTRY_NOT_ACTIVE` |
+| `POST /staff/offers/expire-due` | 200     | `{ expiredCount }`; expires due offers (always mounted)                                      |
+| `GET /staff/audit`              | 200     | `?entityId=` (required); append-only audit events for an entry or offer                      |
 
 Every endpoint can also return 400 `VALIDATION_ERROR` and 404 `NOT_FOUND`; unknown
 paths return 404 `ROUTE_NOT_FOUND`.
@@ -114,10 +131,11 @@ paths return 404 `ROUTE_NOT_FOUND`.
 With `ENABLE_DEV_ROUTES=1` the API mounts test hooks under `/api/dev`. They exist so
 automated tests can get a known state and control time. They are not product features.
 
-| Method & path     | Body                                           | Effect                                       |
-| ----------------- | ---------------------------------------------- | -------------------------------------------- |
-| `POST /dev/reset` | `{ seed?: boolean }`                           | Empty every table; optionally load demo data |
-| `GET /dev/clock`  |                                                | `{ now, frozen }`                            |
-| `POST /dev/clock` | `{ now: ISO \| null }` or `{ advanceMinutes }` | Freeze/unfreeze or advance the API's clock   |
+| Method & path            | Body                                           | Effect                                       |
+| ------------------------ | ---------------------------------------------- | -------------------------------------------- |
+| `POST /dev/reset`        | `{ seed?: boolean }`                           | Empty every table; optionally load demo data |
+| `GET /dev/clock`         |                                                | `{ now, frozen }`                            |
+| `POST /dev/clock`        | `{ now: ISO \| null }` or `{ advanceMinutes }` | Freeze/unfreeze or advance the API's clock   |
+| `GET /dev/notifications` |                                                | Messages sent by the stub notifier           |
 
 See [CONVENTIONS.md](CONVENTIONS.md) for coding conventions and how-tos.

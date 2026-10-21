@@ -15,11 +15,17 @@ export function Layout() {
           <NavLink to="/appointments" data-testid="nav-appointments">
             My appointments
           </NavLink>
+          <NavLink to="/waitlist" data-testid="nav-waitlist">
+            Waitlist
+          </NavLink>
           <NavLink to="/patients" data-testid="nav-patients">
             Patients
           </NavLink>
           <NavLink to="/staff/schedule" data-testid="nav-staff-schedule">
             Staff: schedule
+          </NavLink>
+          <NavLink to="/staff/waitlist" data-testid="nav-staff-waitlist">
+            Staff: waitlist
           </NavLink>
         </nav>
         <label className="current-patient">

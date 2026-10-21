@@ -70,6 +70,74 @@ describe('migrations', () => {
   });
 });
 
+describe('waitlist migration', () => {
+  const columns = (db: ReturnType<typeof openDatabase>, table: string) =>
+    db.prepare(`PRAGMA table_info("${table}")`).all() as Array<{ name: string; notnull: number }>;
+  const fks = (db: ReturnType<typeof openDatabase>, table: string) =>
+    (
+      db.prepare(`PRAGMA foreign_key_list("${table}")`).all() as Array<{
+        from: string;
+        table: string;
+      }>
+    ).map((f) => `${f.from}->${f.table}`);
+
+  it('creates waitlist_entries and slot_offers with foreign keys', () => {
+    const db = openDatabase(':memory:');
+    runMigrations(db);
+    const entryCols = columns(db, 'waitlist_entries');
+    expect(entryCols.map((c) => c.name)).toEqual(
+      expect.arrayContaining([
+        'id',
+        'patient_id',
+        'provider_id',
+        'earliest_at',
+        'latest_at',
+        'status',
+        'created_at',
+      ]),
+    );
+    expect(entryCols.find((c) => c.name === 'provider_id')?.notnull).toBe(0);
+    expect(columns(db, 'slot_offers').map((c) => c.name)).toEqual(
+      expect.arrayContaining(['id', 'entry_id', 'slot_id', 'status', 'expires_at', 'created_at']),
+    );
+    expect(fks(db, 'waitlist_entries')).toEqual(
+      expect.arrayContaining(['patient_id->patients', 'provider_id->providers']),
+    );
+    expect(fks(db, 'slot_offers')).toEqual(
+      expect.arrayContaining(['entry_id->waitlist_entries', 'slot_id->slots']),
+    );
+    expect(runMigrations(db)).toEqual([]);
+  });
+
+  it('enforces the new foreign keys', () => {
+    const db = openDatabase(':memory:');
+    runMigrations(db);
+    expect(() =>
+      db
+        .prepare(
+          "INSERT INTO waitlist_entries (id, patient_id, earliest_at, latest_at, status, created_at) VALUES ('e', 'nope', 'a', 'b', 'active', 'c')",
+        )
+        .run(),
+    ).toThrow(/FOREIGN KEY/);
+    expect(() =>
+      db
+        .prepare(
+          "INSERT INTO slot_offers (id, entry_id, slot_id, status, expires_at, created_at) VALUES ('o', 'nope', 'nope', 'pending', 'a', 'b')",
+        )
+        .run(),
+    ).toThrow(/FOREIGN KEY/);
+  });
+
+  it('keeps audit_events append-only', () => {
+    const db = openDatabase(':memory:');
+    runMigrations(db);
+    db.prepare(
+      "INSERT INTO audit_events (id, entity_type, entity_id, action, at) VALUES ('a', 'slot_offer', 'o', 'created', 't')",
+    ).run();
+    expect(() => db.prepare("UPDATE audit_events SET action = 'x'").run()).toThrow(/append-only/);
+  });
+});
+
 describe('seed and reset', () => {
   it('seeds demo data and reset empties every table', () => {
     const db = openDatabase(':memory:');

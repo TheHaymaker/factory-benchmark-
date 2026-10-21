@@ -15,6 +15,7 @@ const app = createApp({
   clock: devClock ?? systemClock,
   devClock,
   webDistPath: config.webDistPath,
+  offerTtlMinutes: config.offerTtlMinutes,
 });
 
 app.listen(config.port, () => {
