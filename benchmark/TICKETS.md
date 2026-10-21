@@ -182,7 +182,9 @@ the waitlist.
    before).
 6. A failure inside the engine must not roll back or fail the cancellation. The
    cancellation still returns 200 and the appointment is `cancelled`.
-7. `GET /offers?patientId=` returns that patient's `pending` offers.
+7. `GET /offers?patientId=` returns that patient's `pending` offers. Each offer also
+   includes the slot's `startsAt`, `endsAt`, `providerId` and `providerName`, so the UI
+   can show the slot without another request.
 8. Unit tests cover eligibility (provider match, any-provider, window edges), the no-match
    case, and engine-failure isolation.
 
@@ -268,10 +270,10 @@ offers.
 
 ### API contract
 
-| Request                                             | Success                                                                                                                       | Errors                                                                                         |
-| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `GET /staff/waitlist?providerId=` (filter optional) | **200** `WaitlistEntry[]` (not `removed`), oldest first, each with `patientName` and `providerName` (`null` for any provider) | 404 `NOT_FOUND` (unknown provider)                                                             |
-| `POST /staff/offers` `{ entryId, slotId }`          | **201** `SlotOffer` (`pending`, `expiresAt = now + TTL`)                                                                      | 404 `NOT_FOUND` · 409 `SLOT_NOT_OPEN` · 409 `ENTRY_HAS_PENDING_OFFER` · 409 `ENTRY_NOT_ACTIVE` |
+| Request                                                                                                               | Success                                                                                                                       | Errors                                                                                         |
+| --------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `GET /staff/waitlist?providerId=` (filter optional; exact match, so any-provider entries are excluded when filtering) | **200** `WaitlistEntry[]` (not `removed`), oldest first, each with `patientName` and `providerName` (`null` for any provider) | 404 `NOT_FOUND` (unknown provider)                                                             |
+| `POST /staff/offers` `{ entryId, slotId }`                                                                            | **201** `SlotOffer` (`pending`, `expiresAt = now + TTL`)                                                                      | 404 `NOT_FOUND` · 409 `SLOT_NOT_OPEN` · 409 `ENTRY_HAS_PENDING_OFFER` · 409 `ENTRY_NOT_ACTIVE` |
 
 ### Acceptance criteria
 
@@ -319,3 +321,5 @@ offers.
 - `GET /staff/audit?entityId=` → **200**
   `[{ id, entityType, entityId, action, actorId?, at }]`, where `entityId` is the id of
   the waitlist entry or offer the event concerns and `at` is a UTC ISO timestamp.
+- Joining is recorded against the entry's id. Offer creation and offer acceptance are
+  each recorded against the offer's id.

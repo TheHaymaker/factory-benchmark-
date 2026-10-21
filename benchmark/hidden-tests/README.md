@@ -66,3 +66,14 @@ Against `baseline-v1`, every hidden test fails, for the expected reason:
 | T7     | 0/2  | —   |
 | T8     | 0/3  | —   |
 | X      | 0/2  | 0/1 |
+
+## Passability check
+
+A throwaway reference implementation of T1–T8, built from `TICKETS.md` alone and
+kept out of this repository, passes all 73 tests (61 HTTP, 12 E2E). It passed
+three runs in a row with no flakes and keeps `npm run ci` green. So a failure
+means the implementation is wrong, not that the test is unsatisfiable.
+
+The concurrent double-accept test (`t4 › concurrent accepts`) catches races only in
+implementations with async handlers. better-sqlite3 handlers are synchronous, so
+Node serializes those requests anyway. Q6 in the scorecard checks atomicity in review.
