@@ -9,3 +9,5 @@ test-results/
 playwright-report/
 .env
 .DS_Store
+
+benchmark/hidden-tests/results/

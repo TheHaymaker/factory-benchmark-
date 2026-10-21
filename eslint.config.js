@@ -4,7 +4,16 @@ import reactHooks from 'eslint-plugin-react-hooks';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['**/dist/**', '**/coverage/**', 'test-results/**', 'playwright-report/**'] },
+  {
+    ignores: [
+      '**/dist/**',
+      '**/coverage/**',
+      'test-results/**',
+      'playwright-report/**',
+      // Evaluator-only kit with its own toolchain; removed before hand-off.
+      'benchmark/**',
+    ],
+  },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {

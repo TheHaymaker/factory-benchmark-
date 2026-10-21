@@ -4,3 +4,6 @@ coverage
 package-lock.json
 test-results
 playwright-report
+
+# Evaluator-only kit, formatted separately (removed before hand-off)
+benchmark

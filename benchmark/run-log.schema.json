@@ -1,0 +1,232 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/clinic-benchmark/run-log.schema.json",
+  "title": "Software factory benchmark run log",
+  "description": "One file per factory run against the clinic-scheduler baseline. Timestamps are UTC ISO-8601. Money is USD. Token counts are summed across all model calls made on the factory's behalf, including sub-agents, reviewers and retries.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "runId",
+    "factory",
+    "baseline",
+    "startedAt",
+    "finishedAt",
+    "wallClockSeconds",
+    "tickets",
+    "totals"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "runId": { "type": "string", "minLength": 1 },
+    "factory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version"],
+      "properties": {
+        "name": { "type": "string" },
+        "version": { "type": "string" },
+        "models": {
+          "type": "array",
+          "description": "Model identifiers used, in order of share of tokens.",
+          "items": { "type": "string" }
+        },
+        "configuration": {
+          "type": "object",
+          "description": "Free-form factory settings (parallelism, autonomy level, review policy, …)."
+        }
+      }
+    },
+    "baseline": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tag", "commit"],
+      "properties": {
+        "repository": { "type": "string" },
+        "tag": { "const": "baseline-v1" },
+        "commit": { "$ref": "#/$defs/sha" }
+      }
+    },
+    "operator": {
+      "type": "string",
+      "description": "Who supervised the run (name or handle)."
+    },
+    "startedAt": { "$ref": "#/$defs/timestamp" },
+    "finishedAt": { "$ref": "#/$defs/timestamp" },
+    "wallClockSeconds": {
+      "type": "number",
+      "minimum": 0,
+      "description": "finishedAt − startedAt, including time spent waiting for humans."
+    },
+    "activeSeconds": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Optional: wall-clock time excluding periods blocked on a human."
+    },
+    "finalCommit": {
+      "$ref": "#/$defs/sha",
+      "description": "Head commit the hidden tests were run against."
+    },
+    "tickets": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/ticket" }
+    },
+    "humanInterventions": {
+      "type": "array",
+      "description": "Interventions not attributable to a single ticket.",
+      "items": { "$ref": "#/$defs/intervention" }
+    },
+    "hiddenTests": {
+      "$ref": "#/$defs/hiddenTestResult",
+      "description": "Result of hidden-tests/run.sh against finalCommit (sum over all tickets)."
+    },
+    "totals": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tokens", "costUsd", "pullRequests", "humanInterventions"],
+      "properties": {
+        "tokens": { "$ref": "#/$defs/tokens" },
+        "costUsd": { "type": "number", "minimum": 0 },
+        "pullRequests": { "type": "integer", "minimum": 0 },
+        "pullRequestsMerged": { "type": "integer", "minimum": 0 },
+        "ciRuns": { "type": "integer", "minimum": 0 },
+        "ciFailures": { "type": "integer", "minimum": 0 },
+        "humanInterventions": { "type": "integer", "minimum": 0 },
+        "humanMinutes": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Total human effort across all interventions."
+        }
+      }
+    },
+    "notes": { "type": "string" }
+  },
+  "$defs": {
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "Z$"
+    },
+    "sha": { "type": "string", "pattern": "^[0-9a-f]{7,40}$" },
+    "ticketId": { "enum": ["T1", "T2", "T3", "T4", "T5", "T6", "T7", "T8"] },
+    "tokens": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["input", "output"],
+      "properties": {
+        "input": { "type": "integer", "minimum": 0 },
+        "output": { "type": "integer", "minimum": 0 },
+        "cacheRead": { "type": "integer", "minimum": 0 },
+        "cacheWrite": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "passTotal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["passed", "total"],
+      "properties": {
+        "passed": { "type": "integer", "minimum": 0 },
+        "total": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "hiddenTestResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["http", "e2e"],
+      "properties": {
+        "http": { "$ref": "#/$defs/passTotal" },
+        "e2e": { "$ref": "#/$defs/passTotal" },
+        "commit": { "$ref": "#/$defs/sha" }
+      }
+    },
+    "pullRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "openedAt", "state"],
+      "properties": {
+        "id": { "type": "string", "description": "PR number or URL." },
+        "title": { "type": "string" },
+        "branch": { "type": "string" },
+        "headCommit": { "$ref": "#/$defs/sha" },
+        "openedAt": { "$ref": "#/$defs/timestamp" },
+        "mergedAt": { "$ref": "#/$defs/timestamp" },
+        "closedAt": { "$ref": "#/$defs/timestamp" },
+        "state": { "enum": ["open", "merged", "closed"] },
+        "linesAdded": { "type": "integer", "minimum": 0 },
+        "linesDeleted": { "type": "integer", "minimum": 0 },
+        "filesChanged": { "type": "integer", "minimum": 0 },
+        "commits": { "type": "integer", "minimum": 0 },
+        "ciRuns": { "type": "integer", "minimum": 0 },
+        "ciFailures": { "type": "integer", "minimum": 0 },
+        "reviewRounds": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Rounds of review feedback (human or automated) before merge."
+        },
+        "ciGreenAtMerge": { "type": "boolean" }
+      }
+    },
+    "intervention": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["at", "kind", "initiatedBy", "description"],
+      "properties": {
+        "at": { "$ref": "#/$defs/timestamp" },
+        "ticketId": { "$ref": "#/$defs/ticketId" },
+        "kind": {
+          "enum": [
+            "clarification",
+            "unblock",
+            "code_edit",
+            "review_feedback",
+            "permission_grant",
+            "restart",
+            "abort",
+            "other"
+          ],
+          "description": "clarification = answered a question; unblock = fixed env/tooling; code_edit = human changed code; review_feedback = requested changes on a PR; permission_grant = approved an action; restart = restarted the factory or a task."
+        },
+        "initiatedBy": {
+          "enum": ["factory", "human"],
+          "description": "factory = the factory asked for help; human = a person stepped in unprompted."
+        },
+        "durationMinutes": { "type": "number", "minimum": 0 },
+        "description": { "type": "string" }
+      }
+    },
+    "ticket": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ticketId", "status"],
+      "properties": {
+        "ticketId": { "$ref": "#/$defs/ticketId" },
+        "status": { "enum": ["not_started", "in_progress", "completed", "abandoned"] },
+        "startedAt": { "$ref": "#/$defs/timestamp" },
+        "finishedAt": { "$ref": "#/$defs/timestamp" },
+        "wallClockSeconds": { "type": "number", "minimum": 0 },
+        "tokens": { "$ref": "#/$defs/tokens" },
+        "costUsd": { "type": "number", "minimum": 0 },
+        "agentInvocations": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of agent/sub-agent sessions spent on this ticket."
+        },
+        "pullRequests": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/pullRequest" }
+        },
+        "humanInterventions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/intervention" }
+        },
+        "hiddenTests": { "$ref": "#/$defs/hiddenTestResult" },
+        "clarifyingQuestions": {
+          "type": "array",
+          "description": "Questions the factory asked (especially relevant for T7/T8).",
+          "items": { "type": "string" }
+        },
+        "notes": { "type": "string" }
+      }
+    }
+  }
+}
